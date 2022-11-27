@@ -1,0 +1,233 @@
+---
+title: "project-6"
+author: "Chitra Karki"
+date: "11/28/2021"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this project, we consider the Indian Liver Patient dataset available from
+http://archive.ics.uci.edu/ml/datasets/ILPD+%28Indian+Liver+Patient+Dataset%29
+This dataset (of dimension 583  10) contains data on liver disease diagnosis. We will develop a
+diagnostic model via logistic regression.
+To bring the data in to R, you may rst save the data le to a local directory and then try the
+following R commands after appropriate modication:
+
+``` {r}
+ILPD <- read.csv(file="C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/sem1-fall-2021/stat5474_datamining-dr_poko/hw-and-projects/project-6/Indian Liver Patient Dataset (ILPD).csv",
+header=FALSE, col.names=c("age", "gender", "TB", "DB", "alkphos",
+"sgpt", "sgot", "TP", "alb", "AGratio", "liver"))
+dim(ILPD); head(ILPD)
+```
+Please follow the steps outlined below to proceed with the analysis.
+1. Data Clearning: First prepare your data.
+(a) What is the proportion of subjects who were diagnosed with liver diseases? Do you think
+this is ever close to the real prevalence rate of liver diseases in the general population?
+
+``` {r}
+table(ILPD$gender,ILPD$liver)
+barplot(table(ILPD$gender,ILPD$liver),legend=c("Female","Male"),names.arg = c("Yes","NO"),beside = T,col = c("red","green"))
+
+```
+
+
+(b) Are there any missing data?If so, handle them in an appropriate way (via, e.g., listwise
+deletion, imputation).
+``` {r}
+sum(is.na(ILPD))
+apply(ILPD, 2, function(x) sum(is.na(x)))
+library(mice)
+ILPD.imp = mice(ILPD,m=1,method = "cart",maxit = 5,seed = 123)
+ILPD = complete(ILPD.imp)
+sum(is.na(ILPD))
+
+```
+2. EDA and Variable Screening: We rst explore the data with some simple statistical summary.
+(a) Among all the predictors, how many of are continuous, integer counts and categorical?
+``` {r}
+str(ILPD)
+
+```
+continuous variables are: TB, DB,TP, alb, AGratio
+integer variables are   ; age, alkphos, sgpt, sgot,
+categorical variables   ; gender, liver they are leveled as intergers but are categorical instead. we will change them to factors,
+
+
+(b) For each categorical predictor, use 2 -test of independence to assess its association with
+the binary response liver. For other types of predictors, use either two-sample t test (or
+its nonparametric alternative { Wilcoxon rank-sum test). Output the p-value for each
+variable. Some sample R code for this part is given below. Alternatively, you may use
+simple logistic regression for this purpose.
+
+``` {r}
+library(car); # ?leveneTest
+vars.nominal <- c("gender")
+cols.x <- 1:(NCOL(ILPD)-1)
+xnames <- names(ILPD)[cols.x]
+y <- ILPD$liver
+OUT <- NULL
+for (j in 1:length(cols.x)){
+x <- ILPD[, cols.x[j]]
+xname <- xnames[j]
+if (is.element(xname, vars.nominal)){
+tbl <- table(x, y)
+pvalue <- chisq.test(tbl)$p.value
+} else {
+# TWO-SAMPLE t TEST
+pvalue.equal.var <- (leveneTest(x~factor(y))$"Pr(>F)")[1]
+equal.var <- ifelse(pvalue.equal.var <= 0.05, FALSE, TRUE)
+pvalue <- t.test(x~y, alternative="two.sided",
+var.equal=equal.var)$p.value
+# WILCOXON TEST
+# pvalue.wilcoxon <- wilcox.test(x~y, alternative="two.sided")$p.value
+}
+OUT <- rbind(OUT, cbind(xname=xname, pvalue=pvalue))
+}
+OUT <- as.data.frame(OUT)
+colnames(OUT) <- c("name", "pvalue")
+OUT
+
+```
+
+
+(c) Applying a liberal threshold signicance level  = 0:20, exclude predictors that are asso-
+ciated with a p-value larger than that from the subsequent logistic model tting.
+#logistic regrssion
+``` {r}
+attach(ILPD)
+ILPD$liver = as.factor(ILPD$liver)
+ILPD$gender = as.factor(ILPD$gender)
+logit.model = glm(ILPD$liver~.,data = ILPD[,-11],family = "binomial",)
+
+
+a = summary(logit.model);a
+which(a$coefficients[,4] > 0.20)
+
+```
+so we are dropping gender, tb and sgot variables as they are greater then 0.20.
+
+3. Variable Selection:
+(a) First t the full model with all predictors that have passed the screening in Part 2c. Call
+it fit.full.
+``` {r}
+fit.full = glm(as.factor(liver)~age+DB+alkphos+sgpt+TP+alb+AGratio ,data = ILPD[-11],family = "binomial")
+
+```
+
+(b) Then select your `best' model stepwise selection at the aid of BIC. This can be done by
+choosing direction="both" and k=log(n) in the step() function. Call the resultant
+model as fit.step.
+
+``` {r}
+library(MASS)
+fit <- stepAIC(fit.full, direction = "both", k=log(nrow(ILPD)))
+summary(fit) 
+fit.step <- glm(liver ~ age + DB + sgpt , family=binomial, data=ILPD)
+
+summary(fit.step)
+BIC(fit.step)
+```
+(c) Next select your `best' model with one of the regularization methods with dierent types
+of penalties, i.e., LASSO, SCAD, or MCP. Call the resultant model as fit.pen
+Report the essential steps and/or key options involved in the variable selection procedure that
+you choose. Output the necessary tting results for each `best' model, e.g., in particular,
+selected variables and their corresponding slope parameter estimates.
+
+``` {r}
+#SCAD
+library(ncvreg)
+y = ILPD$liver
+x = data.frame(model.matrix(liver~. ,data = ILPD))
+cvfit.SCAD = cv.ncvreg(X = x,y = y,nfolds = 11,family="binomial",penalty="SCAD",lambda.min=0.01,nlambda=100,eps=0.1,max.iter=1000,seed = 123,returnY = T)
+plot(cvfit.SCAD)
+result.SCAD = cvfit.SCAD$fit
+beta.hat = as.vector(result.SCAD$beta[-1, cvfit.SCAD$min])
+cutoff = 0
+terms <- colnames(x)[abs(beta.hat) > cutoff]; terms
+formula.SCAD <- as.formula(paste(c("y ~ 1", terms), collapse=" + "))
+fit.SCAD <- glm(formula.SCAD, data = x, family="binomial")
+summary(fit.SCAD)
+
+```
+# MCP
+``` {r}
+cvfit.MCP = cv.ncvreg(X = x,y = y,nfolds = 11,family="binomial",penalty="MCP",lambda.min=0.01,nlambda=100,eps=0.1,max.iter=1000,seed = 123,returnY=T)
+plot(cvfit.MCP)
+result.MCP = cvfit.MCP$fit
+beta.hat = as.vector(result.MCP$beta[-1, cvfit.MCP$min])
+cutoff = 0
+terms <- colnames(x)[abs(beta.hat) > cutoff]; terms
+formula.MCP <- as.formula(paste(c("y ~ 1", terms), collapse=" + "))
+fit.MCP <- glm(formula.MCP, data = x, family="binomial")
+summary(fit.MCP)
+
+```
+``` {r}
+cvfit.LASSO = cv.ncvreg(X = x,y = y,nfolds = 11,family="binomial",penalty="lasso",lambda.min=0.01,nlambda=100,eps=0.1,max.iter=1000,seed = 123,returnY = T)
+plot(cvfit.LASSO)
+result.LASSO = cvfit.LASSO$fit
+beta.hat = as.vector(result.LASSO$beta[-1, cvfit.LASSO$min])
+cutoff = 0
+terms <- colnames(x)[abs(beta.hat) > cutoff]; terms
+formula.LASSO <- as.formula(paste(c("y ~ 1", terms), collapse=" + "))
+fit.LASSO <- glm(formula.LASSO, data = x, family="binomial")
+summary(fit.LASSO)
+
+```
+
+4. In order to make a resolution on the nal model, let us compare the three models in terms of the
+area under the ROC curve (AUC) or the C-statistics. In order to have a more `honest'
+comparison, we will compare them on the basis of their predicted probabilities after cross-
+validation.
+(a) Compute the jackknife predicted probabilities from every model.
+``` {r}
+## jackknife probalbilites for the predictions from the three models
+Jk.prob.LASSo = apply(data.frame(cvfit.LASSO$y), 1,function(x) mean(x))
+Jk.prob.MCP = apply(data.frame(cvfit.MCP$y),1, function(x) mean(x))
+Jk.prob.SCAD = apply(data.frame(cvfit.SCAD$y), 1,function(x) mean(x)) 
+# as the they contains many values I don't display
+``` 
+
+
+(b) Plot their ROC curves and nd their AUC values. Which model provides the largest
+AUC?
+``` {r}
+library(pROC)
+predict.SCAD = predict(fit.SCAD,x)
+predict.LASSO = predict(fit.LASSO,x)
+predict.mcp = predict(fit.MCP,x)
+
+roc.SCAD = roc(ILPD$liver,predict.SCAD)
+roc.LASSO = roc(ILPD$liver,predict.LASSO)
+roc.mcp = roc(ILPD$liver,predict.mcp)
+
+roc.SCAD$auc
+roc.LASSO$auc
+roc.mcp$auc
+
+plot(roc.SCAD,col="green")
+plot(roc.LASSO,col="blue",add=T)
+plot(roc.mcp,col="red", add=T)
+legend("bottomright",legend=c("SCAD   0.7689","LASSO 0.7682","MCP    0.7691"),lty = c(1,1,1), col = c("green","blue","red"),title = "AUC")
+
+```
+# largest AUC is from MCP penalty
+
+5. Finally, present your nal best logistic model and output the 95% condence intervals for
+coecients j 's as well as their associated odds ratio (i.e., exp(j )). Interpret the results within
+the liver disease diagnostic context.
+``` {r}
+# based on auc we are picking model with mcp penalty for the logistic regression.
+fit.MCP
+library(MASS)
+ci <- confint(fit.MCP, level = 0.95); 
+exp(ci)  # CI FOR OR
+```
+The CI containing 1 ( gender , alkphos,) not significant and we can't whether they increase or decrease to odd to get the liver disease or not. The rest of the other variables are significant and we can tell that either they contribute to increase or decrease the odd to get the liver disease. Here the alb variable will increase the odd to get the disease as the odds ratio(p/(1-p)) is greater then then 1. The rest has odd ratio less then one which means less chance to get the liver disease associated to those features.
+

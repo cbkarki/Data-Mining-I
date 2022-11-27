@@ -1,0 +1,148 @@
+---
+title: "Project-2"
+author: "Chitra karki"
+date: "9/27/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part I: Theoritical Portion
+
+```{r pressure, echo=FALSE, fig.cap="Part I", out.width = '100%'}
+knitr::include_graphics("Image.jpeg")
+```
+
+## Part II: Computer Project
+In this project, we consider the Handwritten Digits dataset from **UCI Machine Learning Repository:**
+<http://archive.ics.uci.edu/ml/datasets/optical+recognition+of+handwritten+digits> .The preprocessing programs made available by NIST was used to extract normalized bitmaps of hand-written digits from a preprinted form. From a total of 43 people, 30 contributed to the training set and different 13 to the test set. The 32* 32 bitmaps are divided into nonoverlapping blocks of 4*4 and the number of on pixels are counted in each block. This generates an input matrix of 8x8 whereeach element is an integer in the range 0 - 16: This reduces dimensionality and gives invariance to small distortions.
+  The compiled data set has 3,823 rows in the training set (optdigits.tra) and 1,797 rows in the test set (optdigits.tes) and 65 columns (64 inputs plus the true digit class in the last column).
+Please read the information available from the website to get yourself informed about this dataset.
+In this project, you are asked to perform some basic data compilation and manipulation, exploratory data analysis, PCA, multidimensional scaling (MDS), and tSNE. Proceed with your analysis by following the specic steps below.
+
+1. Click on **Data Folder** on the tope of the page. You can nd a list of files.
+ Read both the training data set optdigits.tra and the test data set optdigits.tes (the newer verstions of the data) into R. Note that the last column indicate the digit class.
+
+``` {r} 
+# BRING IN THE DATA
+train <- read.table(file=
+                      "http://archive.ics.uci.edu/ml/machine-learning-databases/optdigits/optdigits.tra", sep=",", header = FALSE, na.strings = c("NA", "", " "), col.names = c(paste("x", 1:64, sep=""), "digit"))
+
+test <- read.table(file="http://archive.ics.uci.edu/ml/machine-learning-databases/optdigits/optdigits.tes", sep=",", header = FALSE, na.strings = c("NA", "", ""),col.names = c(paste("x", 1:64, sep=""), "digit"))
+                   
+dim(train); dim(test)
+```
+
+# Concatenate both data sets into one, call it dat.
+``` {r}
+dat = rbind(train, test)
+dim(dat)                   
+col.names = c(paste("x", 1:64, sep=""), "digit")
+```
+
+2. Perform Exploratory Data Analysis (EDA) on dat. While many EDA tools are applicable, let's try out a graphical heatmap presentation of the data. First sort the data according to the digit class so that rows for each digits are piled together. Then obtain a heat map of the data
+(excluding the last column digit) and comment on any interesting ndings. In particular, if there are columns or variables with unary values, you might want to remove them in the ensuing analyses.
+
+``` {r}
+dat0 <- data.matrix(dat[order(dat$digit), -65])
+colnames(dat0)=c(paste("x", 1:64, sep=""))
+n <- NROW(dat0)
+color <- rainbow(n, alpha = 0.8)
+heatmap(dat0, col=color, scale="column", Rowv=NA, Colv=NA,
+        labRow=FALSE, margins=c(4,4), xlab="Image Variables", ylab="Samples",main="Heatmap of Handwritten Digit Data")
+
+```
+
+The x40 column is empty; all the observations are zero. so we further check if other columns have observations zero.
+
+``` {r} 
+which(colSums(dat0)==0)
+``` 
+
+``` {r}
+#double checking for zeros
+table(dat0[,1]);table(dat0[,40])
+
+```
+
+x1 and x40 has colsums = 0; meaning all the observations are zero.so, we are dropping these columns. And the plot is shown below.
+
+``` {r}
+# ploting after droping 1 and 40 columns
+heatmap(dat0[,c(-1,-40)], col=color, scale="column", Rowv=NA, Colv=NA,
+        labRow=FALSE, margins=c(4,4), xlab="Image Variables", ylab="Samples",main="Heatmap of Handwritten Digit Data")
+```
+
+3. Principal Components Analysis (PCA)
+ Run PCA with with dat0 (i.e., with the column digit excluded) and obtain the scree plot showing the cumulative proportions of variation explained by the rst k leading PCs.
+
+
+``` {r}
+# pca analysis
+pca.res <- prcomp(dat0[,c(-1,-40)], scale=TRUE, retx=TRUE)
+#pca.res
+ sd.pc <- pca.res$sdev 
+ var.pc <- sd.pc^2
+ prop.pc <- var.pc/sum(var.pc)
+ #cumulative
+  plot(cumsum(prop.pc), xlab = "Principal Component", col="blue",
+               ylab = "Cumulative Proportion of Variance Explained",
+               type = "b", pch=19)
+```
+
+ Output the estimated rst two PC directions, i.e., the coecients for forming principal components f^a1; ^a2g.
+``` {r}
+a1.a2 <- pca.res$rotation[,1:2]; 
+a1.a2
+
+```
+
+
+ Plot PC2 vs. PC1 with a scatterplot, where the `dots' for each digit are represented with dierent colors and digit symbols. This corresponds to the classical MDS analysis. Do you see any pattern? Interpret your results.
+``` {r}
+colr = rep(NA,nrow(dat))
+colr[which(dat$digit==0)]="red"
+colr[which(dat$digit==1)]="blue"
+colr[which(dat$digit==2)]="green"
+colr[which(dat$digit==3)]="yellow"
+colr[which(dat$digit==4)]="gray"
+colr[which(dat$digit==4)]="black"
+colr[which(dat$digit==6)]="chartreuse4"
+colr[which(dat$digit==7)]="cornflowerblue"
+colr[which(dat$digit==8)]="cyan"
+colr[which(dat$digit==9)]="darkgoldenrod"
+plot(pca.res$x[,c(1,2)],pch=as.character(dat$digit),col=colr)
+```
+
+Patters are not observed. It looks cloud of numbers here and there.
+
+4. Try out another MDS method of your own choice, e.g., Sammon mapping, non-metric MDS. Note that the last column containing the target variable digits should be excluded from the analysis. Plot the rst two low-dimensional coordinates. Again, highlight dierent digits with
+both color and symbols.
+
+``` {r}
+# euclidean distances between the rows
+d = dist(dat0)
+# k is the number of dim
+library("MASS")
+fit = isoMDS(d, k=2) 
+#fit # view results
+# plot solution 
+x = fit$points[,1]; y <- fit$points[,2]
+ plot(x,y,pch=as.character(dat$digit),col=colr,main= "Nonmetric MDS")
+
+```
+
+5. Apply tSNE to the data by, again, excluding the last column digit. Plot the rst two tSNE coordinates by highlighting dierent digits. Compare the plot with the two previous MDS plots and comment.
+
+``` {r}
+#install.packages("Rtsne")
+library(Rtsne)
+tsne <- Rtsne(dat0, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500)
+plot(tsne$Y[,1], tsne$Y[,2], main="tsne",col=colr,pch=as.character(dat$digit),
+     xlab = "comp1",ylab = "comp2")   
+
+```

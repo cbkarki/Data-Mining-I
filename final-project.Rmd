@@ -1,0 +1,326 @@
+---
+title: "Final Project"
+author: "Chitra Karki"
+date: "11/23/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+``` {r}
+df = read.csv(file = "resample_gpp1.csv",header = T,
+              na.strings = c("inf","NA",""))
+dim(df)
+names(df)
+na.per.col = apply(df,2,function(x) sum(is.na(x)/nrow(df)*100)) # for col
+table(na.per.col)
+na.per.row = apply(df,1,function(x) sum(is.na(x)/ncol(df)*100)) # for row
+table(na.per.row)
+which(na.per.row>50) # rows to be deleated. other missing values will be imputed 
+                      #using mice
+
+df = df[-c(57,67,89,102,106),-1] # first column is the row name so remove for now.
+
+# imputing the rest of the missing values
+library(mice)
+imputed_df = mice(df,5,method = "cart",maxit = 5,seed = 500)
+densityplot(imputed_df)
+df = complete(imputed_df)
+sum(is.na(df))
+```
+#correlation
+``` {r}
+df = data.frame(df[,c(1:68,70)],C02ex = df[,69])
+names(df);dim(df)
+str(df)
+View(df)
+cor = cor(df)
+library("corrplot")
+corrplot(cor,method="square",tl.pos = "n")
+corrplot(cor.matrix)
+corrplot(cor.matrix)
+```
+the correlation is seen among the features. also there is good correlation between the features and the response variable. some of the features has no correlation wit response.
+
+# splliting data into test and validation set.
+``` {r}
+#dim(df) #after cleaning
+set.seed(123)
+train.index = sample(1:nrow(df),90) # 90 out of 111 for taining
+                                    # it will be easy for us to perform 10-fold cv
+train = df[train.index,]
+test = df[-train.index,]
+```
+
+## linear model (shirnkage method)
+# lasso
+``` {r}
+# tunning lambda
+library(glmnet)
+#lambda = seq(0,80,0.01)
+x = train[,-70]
+y = train[,70]
+
+# fitting lasso with 100 lamdas
+fit.LR = glmnet(x=x,y=y,alpha = 1,family = "gaussian",nlambda =100)
+ # plot(fit,xvar = "lambda", label = T)
+ # plot(fit,xvar = "dev", label = T)
+
+set.seed(123)
+cv.LR = cv.glmnet(x = as.matrix(x),y = y,
+                  nlambda = 100,nfolds = 10,alpha=1,family="gaussian")
+plot(cv.LR)
+
+  
+# fitting with lamda min form cv
+fit.minlam = glmnet(x=x,y=y,alpha = 1,family = "gaussian",lambda = cv.LR$lambda.min) 
+
+#plot(fit.minlam,label = T)
+#coef(fit.minlam)
+
+# prediction of LR with min lambda
+pred.fit.minlam = predict(fit.minlam, as.matrix(test[,-70]),lambda = cv.LR$lambda.min) 
+
+# selected fearures with min lamda form cv
+names(df)[which(fit.minlam$beta!=0)]
+#coef(pred.fit.minlam)
+ 
+# shrinkage of the features and cutoff of lambda
+plot(fit.LR,xvar = "lambda", label = T)
+abline(v=log(cv.LR$lambda.min))
+
+# mean square error and plot of predicted vs actual 
+sse = sum((pred.fit.minlam - test[,70])^2)
+mse.LR = sse/nrow(test); mse.LR
+plot(y=pred.fit.minlam,x=test[,70],xlim = c(0,2),ylim = c(0,2),
+     xlab = "Acutal Values", ylab = "Predicted values",
+     main = "Predicted Vs True values") 
+abline(a=0,b=1,col="red",lwd=2)
+ 
+# R-squared
+sst = sum((test[,70]-mean(test[,70]))^2)
+r.sq.LR = 1-sse/sst; r.sq.LR # 0.05103245
+```
+
+# Ridge 
+``` {r}
+# fitting ridge with 100 lamdas
+fit.RR = glmnet(x=x,y=y,alpha = 1,family = "gaussian",nlambda =100)
+ # plot(fit,xvar = "lambda", label = T)
+ # plot(fit,xvar = "dev", label = T)
+
+# tunning lambda
+set.seed(123)
+cv.RR = cv.glmnet(x = as.matrix(x),y = y,
+                  nlambda = 100,nfolds = 10,alpha=0,family="gaussian")
+plot(cv.RR)
+
+  
+# fitting with lamda min form cv
+fit.minlam = glmnet(x=x,y=y,alpha = 0,family = "gaussian",lambda = cv.RR$lambda.min) 
+
+#plot(fit.minlam,label = T)
+#coef(fit.minlam)
+
+# prediction of LR with min lambda
+pred.fit.minlam = predict(fit.minlam, as.matrix(test[,-70]),lambda = cv.RR$lambda.min) 
+
+# selected fearures with min lamda form cv
+names(df)[which(fit.minlam$beta!=0)]
+ 
+# shrinkage of the features and cutoff of lambda
+plot(fit.RR,xvar = "lambda", label = T)
+abline(v=log(cv.RR$lambda.min))
+
+# mean square error and plot of predicted vs actual 
+sse = sum((pred.fit.minlam - test[,70])^2)
+mse.RR = sse/nrow(test); mse.RR # 0.05874862
+plot(y=pred.fit.minlam,x=test[,70],xlim = c(0,2),ylim = c(0,2),
+     xlab = "Acutal Values", ylab = "Predicted values",
+     main = "Predicted Vs True values") 
+abline(a=0,b=1,col="red",lwd=2)
+ 
+# R-squared
+sst = sum((test[,70]-mean(test[,70]))^2)
+r.sq.RR = 1-sse/sst; r.sq.RR # 0.6618741
+```
+# principal component analaysis
+``` {r}
+fit.pca = prcomp(train,scale. = T)
+fit.pca
+biplot(fit.pca,scale = 0,cex=0.65)
+fit.pca$rotation
+dim(fit.pca$x)
+fit.pca$x
+fit.pca$sdev
+fit.pca.var = fit.pca$sdev ^2
+propve = fit.pca.var/sum(fit.pca.var)
+plot(propve, xlab = "principal component",
+             ylab = "Proportion of Variance Explained",
+             ylim = c(0, 1), type = "b", 
+             main = "Scree Plot")
+
+
+plot(cumsum(propve), 
+     xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b")
+
+which(cumsum(propve) >= 0.9)[1]
+```
+
+# principal componenet Regression
+``` {r}
+library(pls)
+set.seed(123)
+fit.pcr = pcr(C02ex~.,data= train,scale=T,validation="CV")
+summary(fit.pcr)
+validationplot(fit.pcr,val.type = "MSEP")
+abline(v=2)
+pred.fit.pcr = predict(fit.pcr,test[,-70],ncomp = 2)
+# mse
+mse.fit.pcr = mean((pred.fit.pcr-test[,70])^2); mse.fit.pcr # 0.07632698
+```
+# partial least square regression
+``` {r}
+set.seed(123)
+fit.pls = plsr(C02ex~.,data= train,scale=T,validation="CV")
+summary(fit.pls)
+validationplot(fit.pls,val.type="MSEP")
+```
+
+# regression tree
+``` {r}
+library(tree)
+set.seed(123)
+fit.tree = tree(C02ex~.,data= train)
+summary(fit.tree)
+plot(fit.tree)
+text(fit.tree,pretty=0)
+# cv to purn tree
+set.seed(123)
+cv.tree = cv.tree(fit.tree)
+plot(cv.tree$size,cv.tree$dev,type="b") # the tree of size of 6 has minimum cv deviation.
+# purning
+prune.fit.tree = prune.tree(fit.tree,best = 6)
+plot(prune.fit.tree); text(prune.fit.tree,pretty = 0)
+
+# mse
+pred.prune.fit.tree = predict(prune.fit.tree,newdata=test[,-70])
+
+mse.predit.tree = mean((pred.prune.fit.tree - test[,70])^2); mse.predit.tree
+
+
+```
+
+# Bagging 
+``` {r}
+library(randomForest)
+set.seed(123)
+
+fit.bag = randomForest(C02ex~.,data=train,mtry=69,importance=T)
+which.min(fit.bag$mse)
+plot(fit.bag); abline(v = 250)
+varImpPlot(fit.bag)
+importance(fit.bag)
+pred.fit.bag = predict(fit.bag,newdata=test[,-70],ntree= 250)
+mean((pred.fit.bag - test[,70])^2)
+
+# fit.bag.opt = randomForest(C02ex~.,data=train,mtry=69,ntree=200)
+# 
+# plot(fit.bag.opt)
+# pred.fit.bag.opt = predict(fit.bag.opt,newdata=test[,-70])
+# mean((pred.fit.bag.opt - test[,70])^2)
+```
+# Random Forest
+``` {r}
+set.seed(123)
+tuneRF(train[,-70],train[,70]) ## oob error min for mtry 23
+abline(v=23)
+
+# set.seed(123)
+# rf.cv = rfcv(train[,-70],train[,70])
+# which.min(rf.cv$error.cv)
+# plot(x=rf.cv$n.var,y=rf.cv$error.cv)
+# abline(v = 34)
+#which.min(rf.cv$error.cv)
+
+
+set.seed(123)
+fit.rf = randomForest(C02ex~.,data=train,importance=T,mtry=23 )
+which.min(fit.rf$mse) # 411
+plot(fit.rf); abline(v=411)
+pred.fit.rf = predict(fit.rf,newdata=test[,-70],ntree =411)
+#mse
+mse.fit.rf = mean((pred.fit.rf - test[,70])^2);mse.fit.rf
+
+importance(fit.rf)
+varImpPlot(fit.rf)
+
+```
+
+# tunning parmeters for boosting
+``` {r}
+library("gbm")
+hyper_grid <- expand.grid(
+  shrinkage = c(.01, .1, .3),
+  interaction.depth = c(1, 3, 5),
+  n.minobsinnode = c(5, 10, 15),
+  bag.fraction = c(.65, .8, 1), 
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0                     # a place to dump results
+)
+
+# total number of combinations
+nrow(hyper_grid)
+
+# grid search 
+for(i in 1:nrow(hyper_grid)) {
+  
+  # reproducibility
+  set.seed(123)
+  
+  # train model
+  gbm.tune <- gbm(
+    formula = C02ex ~ .,
+    distribution = "gaussian",
+    data = train,
+    n.trees = 5000,
+    interaction.depth = hyper_grid$interaction.depth[i],
+    shrinkage = hyper_grid$shrinkage[i],
+    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+    bag.fraction = hyper_grid$bag.fraction[i],
+    train.fraction = .75,
+    n.cores = NULL, # will use all cores by default
+    verbose = FALSE
+  )
+  
+  # add min training error and trees to grid
+  hyper_grid$optimal_trees[i] <- which.min(gbm.tune$valid.error)
+  hyper_grid$min_RMSE[i] <- sqrt(min(gbm.tune$valid.error))
+}
+library(dplyr)
+hyper_grid %>% 
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+
+```
+
+
+# Boosting
+``` {r}
+library(gbm)
+set.seed(123)
+#fit.boost = gbm(C02ex~.,data=train,distribution = "gaussian",cv.folds = 10)
+fit.boost = gbm(C02ex~.,data = train,distribution = "gaussian",n.trees = 22,shrinkage = 0.30,interaction.depth =1 ,n.minobsinnode = 5, bag.fraction =0.80 )
+
+tr = data.frame(summary(fit.boost))
+barplot(tr$rel.inf,names.arg = tr$rel.inf,las=2)
+pred.fit.boost=predict(fit.boost,newdata= test[,-70])
+# mse
+mean((pred.fit.boost - test[,70])^2)
+```

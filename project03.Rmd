@@ -1,0 +1,257 @@
+---
+title: "project-3"
+author: "Chitra karki"
+date: "10/7/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r pressure, echo=FALSE, fig.cap="Part I", out.width = '100%'}
+knitr::include_graphics("IMG_2202.jpg",)
+```
+
+# part ii
+``` {r}
+# reading data
+dat = read.csv("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/sem1-fall-2021/stat5474_datamining-dr_poko/hw/project-3/hmeq.csv")
+
+```
+
+# i> percentage of Na values to each variables
+``` {r}
+#attach(dat)
+#detach(dat)
+variables = names(dat)
+b = NULL
+c = ncol(dat)
+d = nrow(dat)
+for (i in 1:c) {
+ b[i]= (sum(is.na(dat[,i]))/d) * 100
+  #paste(a[i], "has",b[i], "% of NA")  
+  #sprintf("%f has of NA",b[i])
+}
+#e = round((b/d)*100,2)
+NA_per = round(b,2) 
+#paste(a, "has", e,"%", "NA")
+#paste("% of NA in each variables")
+#paste("===========================")
+#paste("Variables",'     ',"%")
+cbind(variables,NA_per)
+```
+# ii(a) Replacing missing values in JOb and REason with default NA values.
+``` {r}
+dat[which(dat$REASON==""),"REASON"]=NA
+dat[which(dat$JOB==""),"JOB"]=NA
+b = NULL
+c = ncol(dat)
+d = nrow(dat)
+for (i in 1:c) {
+ b[i]= (sum(is.na(dat[,i]))/d) * 100
+}
+NA_per = round(b,2) 
+cbind(variables,NA_per)
+```
+
+``` {r}
+#pMiss <- function(x){sum(is.na(x))/length(x)*100}
+#apply(dat,2,pMiss)
+#apply(dat,1,pMiss)
+```
+Perform the (natural) logarithm transformation on the following variables: LOAN, VALUE,
+MORTDUE, YOJ, and CLAGE. If a variable has value 0, then try log(x+ 1) for the transformation.
+
+``` {r}
+# checking for zeros in the mentioned variables
+zeros = NULL
+var_check_0 = c("LOAN","VALUE","MORTDUE","YOJ" ,"CLAGE")
+for (i in 1:length(var_check_0)){
+ zeros[i]=length(which(dat[,var_check_0[i]]==0)) 
+}
+cbind(var_check_0,zeros)
+
+```
+
+# log transformation of the mentioned variable (if x = 0,log(x+1))
+# YoJ and CLAGE contain value zeros
+``` {r}
+
+dat[,"YOJ"]= ifelse(dat$YOJ==0,log(1),log(dat$YOJ+1))
+dat[,"CLAGE"]= ifelse(dat$CLAGE==0,log(1),log(dat$CLAGE+1))
+dat[,"MORTDUE"]= ifelse(dat$MORTDUE==0,log(1),log(dat$YOJ+1))
+```
+
+# Imputing with 
+``` {r}
+#install.packages("mice")
+library(mice)
+#str(fill_dat)
+#  fill_dat$LOAN = as.numeric(fill_dat$LOAN)
+dat$REASON = as.numeric(as.factor(dat$REASON))
+dat$JOB = as.numeric(as.factor(dat$JOB))
+#  fill_dat_mat = as.matrix(fill_dat[,-1])
+#  fill.dat.scale = scale(fill_dat_mat)
+imp_dat = mice(dat,m=1,maxit=10,meth='cart',seed=500)
+summary(imp_dat)
+fill_dat = complete(imp_dat,1)
+densityplot(imp_dat)
+#sum(is.na(fill_dat))
+```
+
+# iii
+#computing distance
+
+``` {r}
+# changing mixed variables to numeric
+dat0 <- model.matrix(~.-1, data=fill_dat)
+#dat1 = dist(dat0)
+library(cluster)
+dis.mat = cluster::daisy(fill_dat,metric = "gower",stand = F )
+#install.packages("randomForest")
+
+# alternatively
+library(randomForest)
+#rfdist = randomForest(fill_dat,proximity = T)
+fit.RF = randomForest(fill_dat, mtry=3, proximity=TRUE, ntree=200)
+#names(fit.RF)
+D = as.dist(as.matrix(1-fit.RF$proximity), diag = TRUE, upper = TRUE)
+#head(D)
+
+```
+
+# IV
+``` {r}
+# Hierarchical Clustering
+# str(fill_dat)
+#  fill_dat$LOAN = as.numeric(fill_dat$LOAN)
+#  fill_dat$REASON = as.numeric(as.factor(fill_dat$REASON))
+#  fill_dat$JOB = as.numeric(as.factor(fill_dat$JOB))
+#  fill_dat_mat = as.matrix(fill_dat[,-1])
+#  fill.dat.scale = scale(fill_dat_mat)
+dat0 = scale(dat0[,-1])
+#d <- dist(dat0, method = "euclidean") # distance matrix
+
+
+# fit.ward.D2 <- hclust(d, method="ward.D2")
+# fit.ward <- hclust(d, method="ward.D")
+# fit.single <- hclust(d, method="single")
+# fit.average <- hclust(d, method="average")
+fit <- hclust(dis.mat, method="complete") 
+plot(fit) # display dendogram
+plot(fit, hang = -0.5) # slightly better display 
+
+# SCREE PLOT OF HEIGHT IN HIERARCHICAL CLUSTERING
+#optimal number of clusters
+K.max <- 30
+height <- tail(fit$height, n=K.max)
+n.cluster <- tail((nrow(dat)-1):1, n=K.max)
+plot(n.cluster, height,  type="b", pch=19, cex=.5, xlab="number of clusters", 
+	ylab="height", col="blue", lwd=2)
+
+# 2 cluster are best form the following graph using knee 
+groups <- cutree(fit, k=2) # cut tree into 2 clusters
+dat1 <- data.frame(dat0, h.cluster=groups) # COLLECT THE CLUSTER MEMBERSHIP
+# draw dendogram with red borders around the 2 clusters
+plot(fit, hang = -0.5)   
+rect.hclust(fit, k=2, border="red") 
+
+# pca 
+pca <- prcomp(dat0[,-1], scale=T)
+summary(pca) 
+screeplot(pca, type = "l")
+plot(pca$x[,1:2], pch=as.character(dat[,1]),col=ifelse(dat[,1]==0,"red","blue"))
+#points(pca$x[,1:2],col= ifelse(dat0[,1]==0,"red","blue"))
+#text(pca$x[,1:2],col= ifelse(dat0[,1]==0,"red","blue"))
+
+# Rtsne
+library(Rtsne)
+set.seed(1) # for reproducibility
+tsne <- Rtsne(dat0, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500)
+summary(tsne)
+plot(tsne$Y[,1], tsne$Y[,2], main="tsne",col=ifelse(dat[,1]==0,"red","blue"),xlab = "comp1",ylab = "comp2",pch=as.character(dat[,1]))
+#text(tsne$y[,1],tsne$y[,2],labels = dat0[,1],col= ifelse(dat0[,1]==0,"red","blue"))
+```
+
+# second clusturing method 
+#k-means
+``` {r}
+# K-Means Cluster Analysis
+# SCREE PLOT for Determining number of clusters
+wss <- (nrow(dat0))*sum(apply(dat0,2,var))
+K.max <- 15
+for (K in 2:K.max) wss[K] <- sum(kmeans(dat0, centers=K,iter.max=15)$withinss)
+plot(1:K.max, wss, type="b", xlab="Number of Clusters",
+  ylab="Within groups sum of squares") 
+
+# using knee at 2
+kmeans = kmeans(dat0,2)
+library("factoextra")
+library("ggplot2")
+fviz_cluster(kmeans, data = dat0)
+
+# append cluster assignment to each observation
+dat1 <- data.frame(dat1, km.cluster=kmeans$cluster) 
+
+# Compare two cluster memberships obtained by k-means and Hierarchical clustering
+table(kmeans=dat1$km.cluster, h.cluster=dat1$h.cluster)
+```
+
+# cluster_similarity
+``` {r}
+# COMPUTE JACCARD AND RAND SIMILARITY INDEX 
+#install.packages('clusteval', dependencies = TRUE)
+#library(devtools)
+#install_github('clusteval', 'ramey')
+#library(clusteval)
+#??cluster_similarity
+#
+# cluster_similarity(cluster.SC, dat1$km.cluster, similarity = "rand")
+# cluster_similarity(cluster.SC, dat1$km.cluster, similarity = "jaccard")
+# cluster_similarity(cluster.SC, dat1$h.cluster, similarity = "rand")
+# cluster_similarity(cluster.SC, dat1$h.cluster, similarity = "jaccard")
+```
+# I am not able it install the package clusteval, though I have included the codes.
+
+
+# v> post hoc analysis k-means clustering
+``` {r}
+kmeans
+#table(BAD = dat0$BAD,k_clusters=kmeans$cluster)
+kmeans$centers
+kmeans$cluster
+kmeans$size # first and seconds clusters has 1655 and 4305 observations respectively
+library(cluster)
+clusplot(dat, kmeans$cluster, color=TRUE, shade=TRUE, 
+   labels=2, lines=0)
+# heat map
+library(tidyr)
+cluster = 1:2
+centre = kmeans$centers
+center_df = data.frame(cluster,centre)
+center_re = gather(center_df,features,values)
+ggplot(data=center_re,aes(x=features,y=values,fill=values))
+
+
+# EDA
+dat <- dat0
+clustering <- kmeans$cluster
+n.cluster <- length(unique(clustering))
+vnames <- names(dat0); vnames
+cols.x <- 2:ncol(dat0)
+cols.cat.x <- NULL
+par(mfrow=c(1, 5))
+for (j in cols.x){
+	if (is.element(j, cols.cat.x)) {
+		print(table(clustering, dat[,j]))
+	} else {
+		# windows()
+		boxplot(dat[,j]~clustering, xlab="cluster", ylab=vnames[j], col=1:n.cluster)
+	}
+}
+```
+
+

@@ -1,0 +1,177 @@
+---
+title: 'Project I: Data Preparation1'
+author: "Chitra karki"
+date: "9/7/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Instructions:** While discussions with classmates are allowed and encouraged, please try to work on the
+project independently and direct your questions to the TA/instructor. Please interpret your analysis results
+using concise and clear language and focusing on interesting findings. You are requested to use R
+Markdown to solve this project. Submissions are to be uploaded as a single (knitted) PDF file that contains
+both the code, your comments/conclusions and relevant output/figures, etc.\
+
+In this project, we work with t he 2021 Australian daily weather database available online at       <http://www.bom.gov.au/climate/dwo/>. We will first read the data into R and then prepare data by going
+through a number of issues so that a clean data set can be used for forecasting next day’s weather.
+Finally, some simple exploratory data analysis (EDA) will be conducted.\
+
+1.**(Data Input)** For simplicity, we shall focus on the weather data only at Canberra, which is
+the Australian Capital Territory. Data for the latest month can be found at
+<http://www.bom.gov.au/climate/dwo/IDCJDW2801.latest.shtml>
+However, we will use the CSV text file. See the link by scrolling down the page. There are
+many files like this at the same website for different months over the years.
+With the following R code, we read in the 2021 daily weather data (available on Blackboard)
+from January 1st till August 31st into one dataframe via a simple loop.\
+
+
+```{r}
+# READ DAILY WEATHER DATA IN 2021
+setwd("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/sem1-fall-2021/stat5474_datamining-dr_poko/hw/project-1")
+dat <- NULL
+i0 = NULL
+current.month <- 9
+for (i in 1:(current.month - 1)){
+i0 <- ifelse(i<10, paste("0", i, sep=""), i) 
+mth <- paste("2021", i0, sep="")
+bom <- paste("IDCJDW2801.", mth, ".csv", sep="")
+dat.i <- read.csv(bom, skip=6, check.names=FALSE,
+na.strings = c("NA", "", " "), stringsAsFactors = FALSE)
+dat.i[, 1] <-toupper(month.abb[i])
+dat <- rbind(dat,dat.i)
+}
+```
+
+Along the way, we have created one month variable with values {JAN, FEB, . .. AUG }. Report the
+dimension of the data you obtain and include the first few data lines in your report.
+``` {r}
+dim(dat)
+```
+
+The data we created has 243 rows and 22 colums.
+
+few data lines
+``` {r}
+head(dat)
+```
+
+2. **(Data Cleaning and Preparation)** We next clean the data and make it ready for the
+subsequent analysis. Specifically, we shall address the following issues:
+(a) First print out the (sorted) unique values or levels of every variable in the data set. You
+may obtain the frequency table by treating all variables as if categorical. To do so, you may
+consider using table(x, useNA="ifany"), where the useNA="ifany" option allows us to
+see missing values.
+``` {r}
+#colnames(dat)[1] = "Month" # naming the first column
+#var = colnames(dat)
+#for (i in 1:length(var)) {table(dat[,i],useNA = "ifany")
+lapply(dat,table)
+#}
+```
+
+#``` {r}
+#a = list()
+#for (i in 1:length(names(dat))) {
+# a[i]= table(dat[,i],useNA = "ifany")             }
+#table(dat$`Maximum temperature (°C)`,useNA = "ifany")
+#```
+
+Then inspect for suspicious or problematic records. Comment on issues that you find out.
+For example, you may find that variable called “9am wind speed (km/h)” has records
+with value Calm. This value should be changed to 0 for the analysis purpose. What other
+variables have similar problems?
+(b) The variable called “Time of maximum wind gust” in the 10-th column may not be useful
+for weather forecast purpose and its character-valued time info is difficult to enter any
+model. So let’s remove it from the data set.
+```{r} 
+dat <- dat[, -c(10)]
+```
+
+(c) The variable names are too long. Rename the data set as follows.
+``` {r} 
+names(dat) <- c("Month", "Date", "MinTemp", "MaxTemp", "Rainfall",
+"Evaporation", "Sunshine", "WindGustDir", "WindGustSpeed",
+"Temp9am", "Humidity9am", "Cloud9am", "WindDir9am",
+"WindSpeed9am", "Pressure9am", "Temp3pm", "Humidity3pm",
+"Cloud3pm", "WindDir3pm", "WindSpeed3pm", "Pressure3pm")
+dim(dat);
+names(dat)
+```
+(d) Variables that have Calm as a value would be automatically treated by R as ‘character’ or
+categorical, which is not the right way. For these variables, first change their Calm values
+as 0 and then change their types into ‘numerical’ using the function as.numeric().
+``` {r}
+dat[dat == "Calm"]= as.numeric(0)
+```
+
+(e) Define a variable called RainToday based on Rainfall so that RainToday is 1 if Rainfall
+is greater than 1mm and 0 otherwise. Namely, if it rains less than 1 mm in a day, then
+we report that as no rain.
+``` {r} 
+dat$RainToday = ifelse(dat$Rainfall> 1,1,0)
+```
+Next, define a variable called RainTomorrow by shifting RainToday one day forward:
+``` {r} 
+dat$RainTomorrow <- c(dat$RainToday[2:nrow(dat)], NA)
+```
+Now the data is pretty much ready for some EDA and weather forest usage, where the
+0-1 binary variable RainTomorrow is the target or response variable.
+
+(f) Save a Rdata copy of the data set you have prepared using the save() function that you
+obtain but do not submit it with your project report.
+``` {r}
+save(dat,file = "dat.Rdata")
+```
+
+
+3. **(Exploratory Data Analysis)** Perform some EDA of your choice on the data set that you
+obtained. As a general principal, numerically you may consider two-way contingency table
+plus χ2 test (or Fisher exact test) for independence to assess the association between a categorical variable with the binary outcome and consider two-sample t test (or the nonparametric
+Wilcoxon rank sum test) to assess the association between a continuous variable with the binary
+outcome. Graphical tools can be used as well, e.g., histogram and/or boxplot for continuous
+2
+variables and bar plot and/or mosaic plot for categorical variables (possibly grouped by the
+binary outcome) among many other choices.
+
+``` {r}
+# chi-square test for selected catoregorical variables with binary output
+chisq.test(dat$WindDir3pm,dat$RainTomorrow)
+chisq.test(dat$WindSpeed9am,dat$RainTomorrow) # not significant
+chisq.test(dat$Cloud9am,dat$RainTomorrow) # not significant
+```
+
+#``` {r}
+# Fisherman test 
+#fisher.test(dat$WindDir3pm,dat$RainTomorrow)
+#fisher.test(dat$WindSpeed9am,dat$RainTomorrow)
+#fisher.test(dat$Cloud9am,dat$RainTomorrow)
+
+#```
+
+``` {r}
+# boxplot
+boxplot( dat$RainTomorrow~dat$WindDir9am)
+boxplot(dat$Rainfall~dat$WindDir3pm)
+boxplot(dat$RainTomorrow~dat$Cloud9am)
+boxplot(dat$RainTomorrow~dat$Month)
+```
+The deliverable consists of a l ist of t hree interesting findings that you have discovered. For example, one finding one can obtain by exploring t he association between month and RainTomorrow
+is that the raining likelihood varies with months significantly (p-value = 0.05997 based on
+Fisher's exact test and test size of 0.1) and April has the least rainy days (1 days with
+RainTomorrow = 1).
+``` {r}
+tab <- table(dat$Month, dat$RainTomorrow, useNA="no"); tab
+chisq.test(tab)
+fisher.test(tab, simulate.p.value =TRUE)
+```
+Finally, remember to upload a single PDF file produced with R Markdown containing all code,
+(relevant) output and plots, accompanying comments as well as summary of your findings and
+conclusions.
+
+
+

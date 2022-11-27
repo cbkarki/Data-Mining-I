@@ -1,0 +1,259 @@
+---
+title: "project-4"
+author: "Chitra Karki"
+date: "10/27/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# loading data
+``` {r}
+baseball <- read.table(file=
+"http://www.amstat.org/publications/jse/datasets/baseball.dat.txt",
+header = F, col.names=c("salary", "batting.avg", "OBP", "runs", "hits",
+"doubles", "triples", "homeruns", "RBI", "walks", "strike.outs",
+"stolen.bases", "errors", "free.agency.elig", "free.agent.91",
+"arb.elig", "arb.91", "name"))
+head(baseball)
+dim(baseball)
+```
+# 1. EDA: First prepare your data.
+(a) Obtain the histograms of both salary and the logarithm (natural base) of salary and comment. Proceed with the log-transformed salary from this step on.
+
+``` {r}
+hist(baseball$salary)
+# log transform of salary
+log.salary = log(baseball$salary)
+hist(log.salary)
+baseball$salary = log.salary
+```
+(b) Inspect the data and answer these questions: Are there any missing data? Among all the predictors, how many of them are continuous, integer counts, and categorical, respectively?
+``` {r}
+table(is.na(baseball)) # no missing values
+#dt = str(baseball)
+col.type = NULL
+for (i in 1:ncol(baseball)) {
+  col.type[i] = typeof(baseball[,i])
+  
+}
+table(col.type) 
+summary(baseball)
+str(baseball)
+# there are 2 continuous variable, 15 integer varables among them 4 are categorical variables, and one variable is of string type(character).
+
+```
+
+## 2. Linear Regression with Variable Selection:
+# (a) Partition the data randomly into two sets: the training data D and the test data D0 with a ratio of about 2:1.
+``` {r}
+set.seed(100)
+sample = sample(1:nrow(baseball),2/3*nrow(baseball))
+D = baseball[sample,]
+D.prime = baseball[-sample,]
+```
+
+# (b) Using the training data D, apply three variable selection methods of your choice and identify your ‘best’ models accordingly.
+``` {r}
+# i> variable selection method I, (subset), bestglm
+require(bestglm)
+formula.1 = salary~hits+RBI+errors+arb.91+batting.avg+doubles+walks+free.agency.elig + OBP + triples + strike.outs + free.agent.91 + runs + homeruns + stolen.bases + arb.elig -1
+
+y <- D[, all.vars(formula.1)[1]]
+X <- as.data.frame(model.matrix(as.formula(formula.1),D))
+dat.tmp <- as.data.frame(cbind(X, y))	
+result.bestBIC <- bestglm(Xy=dat.tmp, 
+	IC="BIC", intercept=TRUE, TopModels=5);   
+	# Setting intercept=TRUE means the intercept term is always included
+# names(result.bestBIC)
+# result.bestBIC$BestModels  
+# result.bestBIC$BestModel
+
+# fit.subset <- result.bestBIC$BestModel
+# summary(fit.subset)
+# beta.hat <- fit.subset$"coefficients"; beta.hat
+# 
+# terms <- (names(beta.hat))[-1]
+# formula.bestBIC <- as.formula(paste(c("logsalary ~ ", terms), collapse=" + "))
+# fit.bestBIC <- lm(formula.bestBIC, data = dat)
+# summary(fit.bestBIC)
+```
+
+``` {r}
+# ii> variable selection method II,Stepwise Regression - Backward Deletion
+library(MASS)
+attach(D)
+fit.full = lm(salary~hits+RBI+errors+arb.91+batting.avg+doubles+walks+free.agency.elig + OBP + triples + strike.outs + free.agent.91 + runs + homeruns + stolen.bases + arb.elig)
+fit.step <- stepAIC(fit.full, direction="backward", k=log(nrow(D)))  
+fit.step$anova 
+summary(fit.step)
+detach(D)
+```
+
+
+``` {r}
+ #install.packages("ncvreg")
+# install.packages("glmnet"); library(glmnet)
+library(ncvreg); library(glmnet)
+#10-FOLD CV FOR SELECTING THE TUNING PARAMETER
+cvfit.L1 <- cv.ncvreg(X=X,y=y, nfolds=10, family="gaussian", 
+	penalty="lasso", lambda.min=.005, nlambda=100, eps=.001, max.iter=1000) 
+# The design matrix X does not need to have an intercept. ncvreg standardizes the data and includes an intercept by default.
+plot(cvfit.L1)
+names(cvfit.L1)
+beta.hat <- coef(cvfit.L1)  # THE LASSO COEFFICIENTS WITH MINIMUM CV ERROR
+
+# # NEXT, WE REFIT THE MODEL USING OLS WITH VARIABLES SELECTED BY LASSO
+# # SINCE LASSO DOES NOT ENJOY THE ORACLE PROPERTY
+# cutoff <- 0.0001
+# terms <- names(beta.hat)[abs(beta.hat) > cutoff]
+# formula.LASSO <- as.formula(paste(c("logsalary ~ ", terms[-1]), collapse=" + "))
+# fit.L1 <- lm(formula.LASSO, data = dat)
+# summary(fit.L1)
+
+```
+
+
+# C 
+ i> For the subset selection method, the formula for the model which takes all the 
+features variables was defined. We then stored the response and the feature variables in a seperate variables, then run the bestglm function with top 5 model and BIC for information center.
+
+ii> The formula for full model was defined and regression was performed with the subsequent model where each feature variables were knocked out one at a time. stepAIC function was used for this purpose form MASS library.
+
+iii> 10 fold cross validation was used to shrink down the parametes associated with the features variables with penalty lasso.
+
+# (d) Output the necessary fitting results for each ‘best’ model, e.g., in particular, selected variables and their corresponding slope parameter estimates.
+``` {r}
+result.bestBIC$BestModel # subsetmethod
+fit.step$coefficients # backward-step
+coef(cvfit.L1)>0.0001 # lasso
+```
+# (e) Apply your ‘best’ models to the test data D0. Output the sum of squared prediction error (SSPE). Let’s consider the one yielding the minimum SSPE as the final model.
+
+``` {r}
+#subset and the backward step yielded the same significant feature variables.
+best.subset = lm(salary~hits+RBI+free.agency.elig+free.agent.91+arb.elig,data = D) 
+best.lasso = lm(salary~hits+RBI+batting.avg+doubles+walks+free.agency.elig+runs+homeruns+ stolen.bases+ arb.elig,data = D)
+#summary(best.subset)
+#summary(best.lasso)
+pred.subset = predict.lm(best.subset,newdata = D.prime)
+pred.lasso = predict.lm(best.lasso,newdata = D.prime)
+SSPE.subset = sum(pred.subset - D.prime$salary)^2
+SSPE.lasso = sum(pred.lasso- D.prime$salary)^2
+
+```
+Lasso produced the minimum SSPE. So we will pick this model.
+
+#3. Refit your final model using the entire data, i.e., D ∪D0. Call it fit.final. Provide the output from your final model with summary(fit.final). Interpret the results.
+
+``` {r}
+fit.final = lm(salary~hits+RBI+batting.avg+doubles+walks+free.agency.elig+runs+homeruns+ stolen.bases+ arb.elig,data = baseball)
+summary(fit.final)
+```
+#4. We next perform model diagnostics on the final model.
+(a) (Check Normality) Obtain the studentized jackknife residuals and check if they follow the standard normal distribution using histogram and Q-Q plot graphically and referring to the Shapiro-Wilk test for normality.
+``` {r}
+# OBTAIN THE STUDENTIZED JACKKNIFE RESIDUALS 
+r.jack <- rstudent(fit.final)
+
+# NORMALITY
+par(mfrow=c(1,2),mar=c(8,4,8,4)) 
+hist(r.jack, xlab="Jackknife Residual", col="green4",
+	main="(a) Histogram") 
+library(car)
+# A fancier qq plot for studentized jackknife residuals 
+qqPlot(fit.final, pch=19, cex=.8, col="blue", main="(b) Q-Q Plot") 
+
+# THE SHAPIRO-WILKS NORMALITY TEST: A LARGE P-VALUE WOULD JUSTIFY NORMALITY
+shapiro.test(r.jack) 
+```
+(b) (Check Homoscedasticity) Plot Absolute Jackknife Residuals vs. Fitted values using the R function spreadLevelPlot() in Package {car}. Apply the Breusch-Pagan Test to check for non-constant error variance.
+``` {r}
+# HOMOSCEDASTICITY
+library(car)
+# The Breusch-Pagan Test for Non-Constant Error Variance 
+ncvTest(fit.final) 
+# A LARGE P-VALUE (>0.05) JUSTIFIES EQUAL VARIANCE
+
+# Plot Absolute Jackknife Residuals vs. Fitted values 
+# Power Box-Cox Transformation on the response Y is suggested 
+par(mfrow=c(1,1),mar=c(4, 4, 4, 4)) 
+spreadLevelPlot(fit.final, pch=18, cex=0.5, col="blue",
+	main=" Heteroscedasticity")
+# IF THE LINES ARE FLAT, THEN EQUAL VARIANCE IS JUSTIFIED. 
+
+```
+(c) (Check Independence) Apply the Durbin-Watson test to check for auto-correlated errors.
+``` {r}
+# Test for Autocorrelated Errors
+durbinWatsonTest(fit.final)
+# LARGE P-VALUE (>0.05) JUSTIFIES INDEPENDENCE
+
+```
+(d) (Check Linearity) Use either partial residual plots (Function crPlots in the car package) or partial regression plots (Function leveragePlots in the car package) to check on linearity or functional form for each continuous predictor that you have included in your best linear model.
+
+``` {r}
+# LINEARITY
+# Evaluate Nonlinearity VIA THE component + residual plot (partial residual)
+library(car)
+crPlots(fit.final, main="Partial Residual Plots")
+
+# leverage plots or partial regression plot
+leveragePlots(fit.final, main="Partial Regression (Leverage) Plots") 
+
+```
+(e) (Outlier Detection) Identify outliers that are outlying in terms of predictors, response, and being influential by using the leverage hii, the studentized jackknife residuals ri, and Cook’s distance di. Make a bubble plot of these three measures. Comment on the outlying players. (Hint: use Function influencePlot in the car package.)
+``` {r}
+#OUTLIER DETECTION
+infl <- influence.measures(fit.final) 
+infl.mat <- as.data.frame(infl$infmat)
+# Cook's Distance
+cook.d <- infl.mat$cook.d
+infl <- summary(influence.measures(fit.final))
+infl 
+write.csv(infl, file="Infleunce-Mat.csv", row.names=TRUE)
+
+# library(car)
+outlierTest(fit.final) # Bonferonni p-value for most extreme obs
+
+# Plot of Cook's Distance
+cutoff <- 4/(nrow(baseball)-1.1632e-05-2)
+plot(fit.final, which=4, cook.levels=cutoff, col="gray65", lwd=1.5)
+points(1:nrow(baseball), cook.d, pch=1, cex=1, col="blue")   
+
+# EXTRACT INFLUETIAL POINTS
+baseball[cook.d > 0.05, ]   # HIGH COOK'S DISTANCE
+```
+(f) (Multicollinearity) Assess multicollinearity by obtaining the condition number of the design matrix X and the variance inflation factor (VIF) measures. You don’t have to consider the intercept term. Use 100 as threshold value for the condition number and 10 for VIF to determine presence of severe multicollinearity.
+``` {r}
+#CHECK ON MULTICOLINEARITY 
+
+# CONDITION NUMBER 
+fit <- lm(salary~hits+RBI+batting.avg+doubles+walks+free.agency.elig+runs+homeruns+ stolen.bases+ arb.elig,data = D, x=TRUE); 
+kappa(fit$x)
+# WITHOUT INTERCEPT
+kappa(lm(salary~hits+RBI+batting.avg+doubles+walks+free.agency.elig+runs+homeruns+ stolen.bases+ arb.elig,data = D, x=TRUE)$x);
+
+# COMPUTE VIF USING FUNCTION vif DIRECTLY 
+vif(fit)
+```
+conditional number is greater then then the threshold and the variables RBI and runs have vif greater then 10.
+
+5. Model Deployment; Apply your final model to predict the log-salary for the new data set in the file bb92-test.csv, which contains the performance data only for 20 players, as well as the prediction intervals. Then take the exponential of the predicted values, together for their upper-/lower-bounds, to transform back to regular salary values for better interpretation. Make an error bar plot of the results simply with 1:20 on the X-axis.
+``` {r}
+test = read.csv("C:/Users/chitr/OneDrive - University of Texas at El Paso/data_science/sem1-fall-2021/stat5474_datamining-dr_poko/hw/project-4/bb92-test.csv")
+pred = predict(fit.final, test, interval="prediction");
+dat.plot = data.frame(player=1:20, exp(pred))
+names(dat.plot)
+library("ggplot2")
+ggplot(dat.plot, aes(x=player, y=fit)) +
+geom_errorbar(aes(ymin=lwr, ymax=upr)) + geom_point()
+
+```
+
+
+

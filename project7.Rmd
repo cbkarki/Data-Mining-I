@@ -1,0 +1,161 @@
+---
+title: "project-7"
+author: "Chitra Karki"
+date: "12/3/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. (Data Preparation) Bring in the data and get familiar with the variables.
+(a) Take a look at the data. Inspect if there are missing values and, if so, impute them.
+
+``` {r}
+#install.packages("kernlab")
+library(kernlab)
+data(spam)
+str(spam)
+dim(spam)
+#summary(spam)
+sum(is.na(spam))
+```
+no missig vlaues. The variable type is of factor type. There are 4601 observations and 58 feature
+variables.
+
+(b) Explore data using numerical and graphical EDA techniques. For example, what is the
+percentage of spam emails? What are the types (categorical or continuous) of the inputs?
+Are there any peculiar features for any variable(s) that we should pay attention to? Do not
+present any R output for this part unless really necessary. Instead, summarize your ndings
+in concise language.
+``` {r}
+# percentage of spam and nonspam
+mail = table(spam$type)
+round(100*mail/sum(mail),2)
+```
+The capitlLong and capitalTotal fearures have higher variablity or big range in comparision to other fearures. 
+
+(c) Randomly divide your datasets into the training sample and for the test sample with a
+ratio of 2:1. We will use the training sample to train a number of models and then use
+the test sample to compare them.
+``` {r}
+spam$type = ifelse(spam$type == "spam",1,0)
+set.seed(123)
+train.index =  sample(1:nrow(spam),size = 2/3 * nrow(spam),replace = F)   
+train.x = spam[train.index,-ncol(spam)]
+train.y = spam[train.index,ncol(spam)]
+test.x =  spam[-train.index,-ncol(spam)]
+test.y  = as.factor(spam[-train.index,ncol(spam)])
+```
+
+2. (Supervised Learning) Try out the following predictive modeling tools. For each method, use
+the training set to identify the best model and apply the model to the test set. Then plot the
+ROC curve and compute the C statistic or C index (area under the ROC curve), all based on
+the test set performance. It would be best, but not required, to have the ROC curves plotted on
+one gure and compared. Which method gives the highest C index?
+ Linear discriminant analysis (LDA);
+``` {r}
+library(MASS)
+library(pROC)
+model.lda = lda(train.y~.,data = train.x)
+plot(model.lda, dimen=1, type="both")
+predict.lda = predict(model.lda,test.x)
+table(predict.lda$class,test.y)
+roc.lda = roc(test.y~as.numeric(predict.lda$class))
+```
+There is a certain overlab between  two groups.
+ Train a `best' logistic regression model. Depending on the situation, you might want to
+use a regularized logistic regression;
+``` {r}
+model.logistic = glm(train.y~.,data = train.x,family = "binomial")
+summary(model.logistic)
+
+predict.logistic = predict(model.logistic,test.x)
+roc.logistic = roc(test.y~predict.logistic)
+
+```
+ One single decision tree;
+``` {r}
+library("tree")
+set.seed(123)
+model.tree = tree(factor(train.y)~.,data = train.x)
+plot(model.tree)
+text(model.tree,pretty = 0)
+predict.tree = predict(model.tree,test.x,type="class")
+roc.tree = roc(test.y~as.numeric(predict.tree))
+```
+ Bagging;
+``` {r}
+set.seed(123)
+library(randomForest)
+model.bagging = randomForest(train.y~.,data = train.x,mtry=ncol(train.x),importance=T)
+predict.bagging = predict(model.bagging,test.x,)
+roc.bagging = roc(test.y~predict.bagging)
+```
+ Random Forests (RF);
+``` {r} 
+set.seed(123)
+model.rf = randomForest(train.y~.,data = train.x,mtry = sqrt(ncol(train.x)))
+predict.rf = predict(model.rf,test.x)
+roc.rf = roc(test.y~predict.rf)
+```
+ Boosting.
+``` {r}
+library(gbm)
+set.seed(123)
+model.boosting = gbm(train.y~.,data = train.x)
+predict.boosting = predict(model.boosting,test.x)
+roc.boosting = roc(test.y~predict.boosting)
+```
+C.statistics
+``` {r}
+auc(roc.lda);auc(roc.logistic);auc(roc.bagging);auc(roc.rf);auc(roc.boosting);auc(roc.tree)
+plot(roc.lda,col=1,main="C-Statistics",lty=1)
+plot(roc.logistic,col=2,lty=2,add=T)
+plot(roc.bagging,col=3,lty=3,add=T)
+plot(roc.rf,col=4,lty=4,add=T)
+plot(roc.boosting,col=5,lty=5,add=T)
+plot(roc.tree,col=6,lty=6,add=T)
+legend("bottomright",legend = c("lda 0.8641","log 0.9747","bag 0.9791","rf 0.9861", "boo 0.9746", "tree 0.8925"),lty=c(1:6),col = c(1:6),title="AUC")
+```
+3. (Additional Features from RF ) Train an RF model with B = 2000 trees using the entire
+dataset. Make sure that you set these two options: importance = TRUE and proximity =
+TRUE.
+``` {r}
+set.seed(123)
+model.rf.full = randomForest(spam$type~.,data = spam,mtry = sqrt(ncol(train.x)),ntree=2000,importance=T,proximity=T)
+#plot(model.rf.full)
+```
+(a) Obtain the variable importance ranking plots and compare with the variables selected in
+logistic regression.
+``` {r}
+# varimp logistic vs randomforest 
+varImpPlot(model.rf.full)
+imp.logistic = summary(model.logistic)
+names(which(imp.logistic$coefficients[,4] > 0.1)) 
+```
+
+(b) Obtain the partial dependence plot for the top two variables that you deem most impor-
+tant.
+``` {r}
+partialPlot(model.rf.full,spam,charExclamation)
+partialPlot(model.rf.full,spam,remove)
+
+```
+(c) Obtain the proximity matrix and transform it into a distance or dissimilarity matrix D.
+Apply an MDS technique to D and plot the results, by specifying the spam (red) or regular
+(green) email status with dierent colors. Interpret the 
+``` {r}
+proxitimy.matrix = model.rf.full$proximity
+library(cluster)
+D = daisy(scale(spam),metric = "euclidean")
+#classical MDS
+model.cmd = cmdscale(D,eig = T,k=2)
+x = model.cmd$points[,1]
+y = model.cmd$points[,2]
+plot(x,y,col=ifelse(spam$type==1,"red","green"))
+```
+
